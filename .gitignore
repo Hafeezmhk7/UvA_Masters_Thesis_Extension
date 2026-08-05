@@ -76,3 +76,14 @@ outputs/
 # ... except intended doc/figure assets under fig/
 !fig/
 !fig/**
+
+# Model checkpoints
+checkpoints/
+!checkpoints/README.md
+
+# Outputs
+outputs/
+
+# Python cache
+__pycache__/
+*.pyc
