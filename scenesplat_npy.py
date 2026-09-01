@@ -87,3 +87,27 @@ def chunk_scene(scene, chunk_m=4.8, min_pts=2000):
         gy = int(key.item() % 100000)
         chunk = {k: v[mask] for k, v in scene.items()}
         yield f"x{gx}_y{gy}", chunk
+
+
+def collapse_by_opacity(chunk, grid=0.025):
+    """
+    Pre-collapse a chunk so each 2.5 cm voxel keeps exactly ONE Gaussian: the
+    one with the highest opacity. This makes the VQ-VAE's own per-voxel
+    selection (RANDOM_SUBSAMPLE by default) a no-op, so we control which
+    Gaussian represents each voxel instead of leaving it to chance.
+
+    Deterministic: for each voxel, the surviving index is the argmax of opacity
+    among the Gaussians that fall in it. No torch_scatter dependency.
+    """
+    vox = torch.round(chunk["coords"] / grid).to(torch.int64)
+    uniq, inv = torch.unique(vox, dim=0, return_inverse=True)  # inv: (N,) voxel id per gaussian
+    opa = chunk["opacities"].reshape(-1)
+
+    # For each voxel pick the gaussian with max opacity.
+    # Sort gaussians by opacity ascending; the LAST occurrence of each voxel id
+    # in that order is its highest-opacity member.
+    order = torch.argsort(opa)                      # ascending opacity
+    inv_sorted = inv[order]                         # voxel ids in opacity order
+    winner_slot = torch.empty(uniq.shape[0], dtype=torch.long)
+    winner_slot[inv_sorted] = order                 # last write per voxel wins = max opacity
+    return {k: v[winner_slot] for k, v in chunk.items()}
