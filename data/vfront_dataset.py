@@ -216,6 +216,20 @@ class VFrontGaussianDataset(BaseSceneDataset):
         self.depth_camera_sampling_stride = max(1, int(depth_camera_sampling_stride))
 
     def load_gaussians(self, path: str) -> Dict[str, torch.Tensor]:
+        # SceneSplat .npy scenes: route to the validated scenesplat loader.
+        import os as _os
+        _scene_dir = path if _os.path.isdir(path) else _os.path.dirname(path)
+        if _os.path.exists(_os.path.join(_scene_dir, "coord.npy")):
+            from scenesplat_npy import load_scenesplat_scene
+            g = load_scenesplat_scene(_scene_dir)
+            return {
+                "coords": g["coords"].float(),
+                "sh0": g["sh0"].float(),
+                "opacities": g["opacities"].float().reshape(-1),
+                "scales": g["scales"].float(),
+                "quats": g["quats"].float(),
+            }
+
         data = load_pth_sparse_gaussian(path, self.sh_degree, self.voxel_size)
 
         anchor = torch.tensor(data["anchor"], dtype=torch.float32)
@@ -597,6 +611,12 @@ class VFrontGaussianDataset(BaseSceneDataset):
         return downsampled, new_width, new_height, new_cx, new_cy
 
     def get_scene_id(self, path: str) -> str:
+        import os as _os
+        # SceneSplat .npy scenes: the gaussian "path" is the scene directory
+        # itself (gaussian_subpath=""), so the scene id is its basename.
+        _sd = path if _os.path.isdir(path) else _os.path.dirname(path)
+        if _os.path.exists(_os.path.join(_sd, "coord.npy")):
+            return _os.path.basename(_sd.rstrip("/"))
         p = Path(path)
         try:
             return p.parents[3].name
@@ -636,7 +656,7 @@ def _resolve_depth_paths(
 
     # Some datasets encode RGB root folders in transforms (e.g. "rgb_masked/..."),
     # while depth mirrors the remaining subpath under depth/.
-    if len(image_rel.parts) > 1 and image_rel.parts[0] in {"rgb", "rgb_masked"}:
+    if len(image_rel.parts) > 1 and image_rel.parts[0] in {"rgb", "rgb_masked", "images"}:
         candidates.append(
             images_root
             / depth_subdir
@@ -652,13 +672,14 @@ def _resolve_depth_paths(
 
 
 def _read_depth(depth_path: str) -> np.ndarray:
-    import imageio.v3 as iio
-
-    depth = iio.imread(depth_path)
+    if depth_path.endswith(".npy"):
+        depth = np.load(depth_path)
+    else:
+        import imageio.v3 as iio
+        depth = iio.imread(depth_path)
     if depth.ndim == 3:
         depth = depth[..., 0]
     return depth.astype(np.float32)
-
 
 def _camera_chunk_projected_area_ratio(
     cam, chunk_bounds_world: Tuple[List[float], List[float]]
