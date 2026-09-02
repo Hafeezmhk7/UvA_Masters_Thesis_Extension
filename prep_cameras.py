@@ -53,6 +53,8 @@ def parse_args():
     p.add_argument("--out-root", default=OUT_ROOT_DEFAULT)
     p.add_argument("--target-w", type=int, default=960)
     p.add_argument("--target-h", type=int, default=540)
+    p.add_argument("--frame-stride", type=int, default=1,
+                   help="Keep every Nth frame (1=all). Use ~5 to subsample.")
     p.add_argument("--extract-images", action="store_true", default=True,
                    help="Unzip+resize images (needed for the render loss).")
     p.add_argument("--no-extract-images", dest="extract_images",
@@ -60,7 +62,7 @@ def parse_args():
     return p.parse_args()
 
 
-def convert_scene(scene, out_root, tw, th, extract_images):
+def convert_scene(scene, out_root, tw, th, extract_images, frame_stride=1):
     cam_dir = os.path.join(CAM_ROOT, scene)
     meta = json.load(open(os.path.join(cam_dir, "lang_feat_selected_imgs.json")))
 
@@ -86,7 +88,9 @@ def convert_scene(scene, out_root, tw, th, extract_images):
                  if n.lower().endswith((".jpg", ".jpeg", ".png"))}
 
     try:
-        for fr in meta["frames"]:
+        for _fi, fr in enumerate(meta["frames"]):
+            if _fi % frame_stride != 0:
+                continue
             if fr.get("is_bad"):
                 n_bad += 1
                 continue
@@ -135,7 +139,7 @@ def main():
     print(f"Converting {len(scenes)} scenes -> {args.out_root}")
     for s in scenes:
         convert_scene(s, args.out_root, args.target_w, args.target_h,
-                      args.extract_images)
+                      args.extract_images, args.frame_stride)
 
 
 if __name__ == "__main__":

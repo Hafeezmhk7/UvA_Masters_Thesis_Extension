@@ -8,7 +8,7 @@ Use a scene NOT in the training split (e.g. 0207_840167 or 0208_840166).
 Run on a GPU node from the repo root:
     python eval_before_after.py \
         --scene 0207_840167 \
-        --finetuned logs/scenesplat_finetune_v3/lightning_logs/version_0/checkpoints/last.ckpt
+        --finetuned logs/scenesplat_ft200/lightning_logs/version_26301338/checkpoints/loss_monitor_epoch_14_step_2700.ckpt
 """
 
 import argparse
