@@ -72,6 +72,7 @@ outputs/
 *.png
 *.jpg
 *.jpeg
+*.txt
 
 # ... except intended doc/figure assets under fig/
 !fig/

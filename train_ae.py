@@ -252,6 +252,7 @@ def train(cfg):
         default_root_dir=os.path.join(cfg.experiment.log_dir, cfg.experiment.name),
         max_epochs=cfg.training.max_epochs,
         accelerator="gpu",
+        check_val_every_n_epoch=getattr(cfg.training, "check_val_every_n_epoch", 1),
         accumulate_grad_batches=cfg.training.accumulate_grad_batches,
         devices=num_gpus,
         precision=cfg.training.precision,
