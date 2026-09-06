@@ -38,3 +38,4 @@ tokenization:
   output_dir: null
   sort_by: "z"
   generate_augmented_samples: false
+check_val_every_n_epoch: 10

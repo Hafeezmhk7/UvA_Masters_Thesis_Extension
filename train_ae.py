@@ -53,7 +53,12 @@ class RenderCallback(lightning.Callback):
         world_size = trainer.world_size
         rank = trainer.global_rank
 
-        available_val_samples = len(trainer.val_dataloaders.dataset)
+        if trainer.val_dataloaders is None:
+            # validation dataloader only exists on validation epochs
+            # (check_val_every_n_epoch); skip val-sample rendering otherwise
+            available_val_samples = 0
+        else:
+            available_val_samples = len(trainer.val_dataloaders.dataset)
         num_val_samples = min(self.num_samples_val, available_val_samples)
         total_samples = self.num_samples_train + num_val_samples
 
