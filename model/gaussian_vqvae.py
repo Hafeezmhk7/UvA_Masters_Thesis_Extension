@@ -157,6 +157,7 @@ class GaussianVQVAE(lightning.LightningModule):
             "ssim_loss": rerender_cfg.ssim_weight,
             "chroma_loss": float(getattr(rerender_cfg, "chroma_weight", 0.0)),
             "depth_loss": float(getattr(rerender_cfg, "depth_weight", 0.0)),
+            "depth_gm_loss": float(getattr(rerender_cfg, "depth_gm_weight", 0.0)),
         }
 
         # add target key if training or sanity checking
@@ -213,6 +214,7 @@ class GaussianVQVAE(lightning.LightningModule):
             use_chroma_loss=loss_weights["chroma_loss"] > 0.0,
             output_dir=sanity_image_dir,
             depth_weight=loss_weights["depth_loss"],
+            depth_gm_weight=loss_weights["depth_gm_loss"],
         )  # type: ignore
 
         for loss_name, weight in loss_weights.items():

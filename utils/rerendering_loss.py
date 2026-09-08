@@ -75,6 +75,27 @@ def _masked_smooth_l1(
     return _masked_mean(loss, mask)
 
 
+def _gradient_matching_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    mask: Optional[torch.Tensor],
+) -> torch.Tensor:
+    """|grad_x(target-pred)| + |grad_y(target-pred)|, masked. Penalizes edge/
+    sharpness mismatch directly rather than absolute error -- a smooth-L1 depth
+    loss can be satisfied by a blurred depth map that's right on average but
+    wrong at discontinuities. Follows ReconSplat (Stracquadanio et al. 2026) Eq. 4.
+    """
+    grad_pred_x = prediction[..., :, 1:] - prediction[..., :, :-1]
+    grad_target_x = target[..., :, 1:] - target[..., :, :-1]
+    grad_pred_y = prediction[..., 1:, :] - prediction[..., :-1, :]
+    grad_target_y = target[..., 1:, :] - target[..., :-1, :]
+    mask_x = mask[..., :, 1:] & mask[..., :, :-1] if mask is not None else None
+    mask_y = mask[..., 1:, :] & mask[..., :-1, :] if mask is not None else None
+    return _masked_l1(grad_pred_x, grad_target_x, mask_x) + _masked_l1(
+        grad_pred_y, grad_target_y, mask_y
+    )
+
+
 def _saturation(rgb: torch.Tensor) -> torch.Tensor:
     """HSV saturation, (B,3,H,W) -> (B,1,H,W). Cheap, no colorspace library
     round-trip needed since only S is used: S = (max-min)/max, 0 where max~0.
@@ -237,16 +258,18 @@ class RerenderingLoss(nn.Module):
         output_dir: Optional[str] = None,
         offset: int = 0,
         depth_weight: float = 0.0,
+        depth_gm_weight: float = 0.0,
     ):
         with torch.amp.autocast_mode.autocast(self.device.type, enabled=False):
             if ImageKeys.IMAGES not in image_dict:
                 raise KeyError(
                     f"Missing {ImageKeys.IMAGES} in image_dict; expected supervision images."
                 )
-            need_depth_loss = depth_weight > 0.0
+            need_depth_loss = depth_weight > 0.0 or depth_gm_weight > 0.0
             if need_depth_loss and ImageKeys.DEPTHS not in image_dict:
                 raise KeyError(
-                    f"Missing {ImageKeys.DEPTHS} in image_dict while depth_weight>0."
+                    f"Missing {ImageKeys.DEPTHS} in image_dict while depth_weight>0 "
+                    "or depth_gm_weight>0."
                 )
             if output_dir is not None:
                 img_dir = os.path.join(output_dir, "img")
@@ -269,6 +292,7 @@ class RerenderingLoss(nn.Module):
             vgg_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             chroma_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             depth_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
+            depth_gm_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             mask_coverage_coll = torch.zeros(
                 (), device=self.device, dtype=torch.float32
             )
@@ -396,6 +420,10 @@ class RerenderingLoss(nn.Module):
                         target_depth,
                         depth_mask,
                     )
+                    if depth_gm_weight > 0.0:
+                        depth_gm_loss_coll += _gradient_matching_loss(
+                            pred_depth, target_depth, depth_mask
+                        )
 
                 # 4. (optional) compute metrics if calc_metrics is True
                 if calc_metrics:
@@ -419,6 +447,7 @@ class RerenderingLoss(nn.Module):
                 "vgg_loss": vgg_loss_coll / B,
                 "chroma_loss": chroma_loss_coll / B,
                 "depth_loss": depth_loss_coll / B,
+                "depth_gm_loss": depth_gm_loss_coll / B,
             }
             if num_masked_batches > 0:
                 return_dict["mask_coverage"] = mask_coverage_coll / num_masked_batches
