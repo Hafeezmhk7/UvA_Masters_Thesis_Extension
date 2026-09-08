@@ -155,6 +155,7 @@ class GaussianVQVAE(lightning.LightningModule):
             "vgg_loss": rerender_cfg.vgg_weight,
             "lpips_loss": rerender_cfg.lpips_weight,
             "ssim_loss": rerender_cfg.ssim_weight,
+            "chroma_loss": float(getattr(rerender_cfg, "chroma_weight", 0.0)),
             "depth_loss": float(getattr(rerender_cfg, "depth_weight", 0.0)),
         }
 
@@ -209,6 +210,7 @@ class GaussianVQVAE(lightning.LightningModule):
             use_lpips_loss=loss_weights["lpips_loss"] > 0.0,
             use_ssim_loss=loss_weights["ssim_loss"] > 0.0,
             use_vgg_loss=loss_weights["vgg_loss"] > 0.0,
+            use_chroma_loss=loss_weights["chroma_loss"] > 0.0,
             output_dir=sanity_image_dir,
             depth_weight=loss_weights["depth_loss"],
         )  # type: ignore

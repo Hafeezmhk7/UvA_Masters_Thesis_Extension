@@ -21,6 +21,7 @@ losses:
     lpips_weight: 0.0
     ssim_weight: 0.0
     depth_weight: 0.0
+    chroma_weight: 0.0 # masked L1 on HSV saturation; off by default, see utils/rerendering_loss.py
 
 # training visual output configuration
 output:

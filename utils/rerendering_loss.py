@@ -75,6 +75,15 @@ def _masked_smooth_l1(
     return _masked_mean(loss, mask)
 
 
+def _saturation(rgb: torch.Tensor) -> torch.Tensor:
+    """HSV saturation, (B,3,H,W) -> (B,1,H,W). Cheap, no colorspace library
+    round-trip needed since only S is used: S = (max-min)/max, 0 where max~0.
+    """
+    maxc = rgb.max(dim=1, keepdim=True).values
+    minc = rgb.min(dim=1, keepdim=True).values
+    return torch.where(maxc > 1e-6, (maxc - minc) / maxc.clamp(min=1e-6), torch.zeros_like(maxc))
+
+
 class RerenderingLoss(nn.Module):
     def __init__(
         self,
@@ -224,6 +233,7 @@ class RerenderingLoss(nn.Module):
         use_lpips_loss: bool = False,
         use_ssim_loss: bool = False,
         use_vgg_loss: bool = False,
+        use_chroma_loss: bool = False,
         output_dir: Optional[str] = None,
         offset: int = 0,
         depth_weight: float = 0.0,
@@ -257,6 +267,7 @@ class RerenderingLoss(nn.Module):
             lpips_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             ssim_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             vgg_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
+            chroma_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             depth_loss_coll = torch.zeros((), device=self.device, dtype=torch.float32)
             mask_coverage_coll = torch.zeros(
                 (), device=self.device, dtype=torch.float32
@@ -347,6 +358,16 @@ class RerenderingLoss(nn.Module):
                             device=self.device, resize=True
                         ).eval()
                     vgg_loss_coll += self.vgg_loss_f(masked_preds, masked_targets)
+                if use_chroma_loss:
+                    # Directly supervises HSV saturation: plain RGB L1/VGG is
+                    # luminance-dominated (natural-image variance sits mostly in
+                    # luma, not chroma), so saturation error is under-weighted in
+                    # the gradient unless something targets it explicitly -- the
+                    # same mechanism Zhang et al. (2016) diagnose for desaturated
+                    # colorization-by-regression.
+                    chroma_loss_coll += _masked_l1(
+                        _saturation(rendered_preds), _saturation(targets), loss_mask
+                    )
 
                 if need_depth_loss:
                     if rendered_preds_full.shape[1] < 4:
@@ -396,6 +417,7 @@ class RerenderingLoss(nn.Module):
                 "lpips_loss": lpips_loss_coll / B,
                 "ssim_loss": ssim_loss_coll / B,
                 "vgg_loss": vgg_loss_coll / B,
+                "chroma_loss": chroma_loss_coll / B,
                 "depth_loss": depth_loss_coll / B,
             }
             if num_masked_batches > 0:
