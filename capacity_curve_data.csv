@@ -1,0 +1,3 @@
+label,num_tokens,epoch,converged,psnr,std_ratio,saturation_ratio
+baseline_1tok,1,14,yes,17.944,0.842,0.767
+rvq4_epoch9,4,9,no,18.550,0.873,0.765

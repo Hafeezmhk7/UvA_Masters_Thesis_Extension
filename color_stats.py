@@ -75,6 +75,10 @@ def main():
     ap.add_argument("--cams-per-scene", type=int, default=8)
     ap.add_argument("--chunk-m", type=float, default=4.0)
     ap.add_argument("--alpha-thresh", type=float, default=0.5)
+    ap.add_argument("--label", default=None,
+                     help="Tag for this run (e.g. 'baseline_1tok', 'rvq4_epoch9') stored in --save-json output.")
+    ap.add_argument("--save-json", default=None,
+                     help="Write the aggregate numbers to this path for use with compare_color_stats.py.")
     args = ap.parse_args()
 
     device = torch.device("cuda")
@@ -145,25 +149,48 @@ def main():
     print(f"std ratio (recon/GT):        {std_ratio.round(3).tolist()}")
     print(f"saturation ratio (recon/GT): {sat_ratio:.3f}")
 
-    print("\nVerdict:")
-    if std_ratio.mean() < 0.7 and mean_shift.mean() < 0.05:
+    # Report the gap to parity as a continuous number rather than a pass/fail
+    # verdict against a fixed threshold: a run at 0.849 and a run at 0.851
+    # are the same regime, and a hard cutoff (e.g. 0.85) makes them look
+    # qualitatively different when they aren't. Use compare_color_stats.py
+    # (with --save-json below) to see whether a *change* between two runs
+    # is real, rather than reading a single run's ratio against a cutoff.
+    std_gap = 1.0 - float(std_ratio.mean())
+    sat_gap = 1.0 - sat_ratio
+    print("\nGap to parity (0 = matches GT, no threshold implied):")
+    print(f"  color-variance gap:  {std_gap:.3f}  (mean std ratio {std_ratio.mean():.3f})")
+    print(f"  saturation gap:      {sat_gap:.3f}  (saturation ratio {sat_ratio:.3f})")
+    print(f"  max |mean shift|:    {float(mean_shift.max()):.4f}")
+    if mean_shift.mean() >= 0.05:
         print(
-            "  -> variance collapse (mean-regression): recon tracks GT's mean but "
-            "compresses variance/saturation. This is the discrete-bottleneck hedging "
-            "signature -> pursue the noise-conditioned (WeTok-style) generative decoder, "
-            "and switch your primary metric toward LPIPS/FID before evaluating it "
-            "(perception-distortion tradeoff, Blau & Michaeli 2018)."
-        )
-    elif mean_shift.mean() >= 0.05:
-        print(
-            "  -> systematic mean shift: recon color is offset from GT, not just "
-            "lower-variance. Check ClampedRGBColorRepresentation's sh2rgb/rgb2sh "
+            "\nNote: mean shift is large enough to check direction before assuming "
+            "capacity is the issue -- if reconstructions shift *toward* 0.5 grey "
+            "across channels, check ClampedRGBColorRepresentation's sh2rgb/rgb2sh "
             "round-trip and the sh0 head's 0.5-grey const_init_bias "
-            "(conf/internal_representations.py) before touching decoder architecture -- "
-            "this looks like a fixable bug, not a capacity ceiling."
+            "(conf/internal_representations.py); a shift *away* from grey rules that "
+            "bug out, as it did on this codebase's first run."
         )
-    else:
-        print("  -> no strong signal either way; inspect the per-channel numbers directly.")
+
+    if args.save_json:
+        payload = {
+            "label": args.label,
+            "checkpoint": args.checkpoint,
+            "scenes": args.scenes,
+            "n_pixels_pairs": len(gt_means),
+            "gt_mean": gt_mean.tolist(),
+            "recon_mean": re_mean.tolist(),
+            "gt_std": gt_std.tolist(),
+            "recon_std": re_std.tolist(),
+            "gt_saturation": gt_sat,
+            "recon_saturation": re_sat,
+            "mean_shift_per_channel": mean_shift.tolist(),
+            "std_ratio_per_channel": std_ratio.tolist(),
+            "std_ratio_mean": float(std_ratio.mean()),
+            "saturation_ratio": sat_ratio,
+        }
+        with open(args.save_json, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"\nSaved {args.save_json}")
 
 
 if __name__ == "__main__":
