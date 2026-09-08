@@ -66,10 +66,13 @@ def fill_background(rgb, hit_mask):
     """
     out = rgb.clone()
     if hit_mask.any():
-        mean = rgb[:, hit_mask].mean(dim=1, keepdim=True)
+        mean = rgb[:, hit_mask].mean(dim=1, keepdim=True)  # (3, 1)
     else:
-        mean = rgb.mean(dim=(1, 2), keepdim=True)
-    out[:, ~hit_mask] = mean.squeeze(-1)
+        mean = rgb.reshape(rgb.shape[0], -1).mean(dim=1, keepdim=True)  # (3, 1)
+    # mean is (3, 1); out[:, ~hit_mask] is (3, N) -- broadcasts on the trailing
+    # dim (1 -> N). Do NOT squeeze this to (3,): (3,) vs (3, N) does not
+    # broadcast (trailing dims 3 vs N mismatch), which is what crashed before.
+    out[:, ~hit_mask] = mean
     return out
 
 
